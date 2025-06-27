@@ -119,7 +119,7 @@ impl EcryptionService {
         // fetch the blob from walrus
         let client = reqwest::Client::new();
         let response = match client
-        .get(&format!("https://universal-dehlia-mothrbox-b59d2011.koyeb.app/read_blob_as_file/{}", blob_id))
+        .get(&format!("https://mothrbox-walrus-pypush.onrender.com/read_blob_as_file/{}", blob_id))
         .send()
         .await
          {
@@ -194,7 +194,7 @@ impl EcryptionService {
 
     let client = reqwest::Client::new();
     let response = match client
-    .post("https://universal-dehlia-mothrbox-b59d2011.koyeb.app/write_to_walrus/")
+    .post("https://mothrbox-walrus-pypush.onrender.com/write_to_walrus/")
     // .header("Content-Type", "application/octect-stream")
     // .body(ciphertext)
     .multipart(form)
