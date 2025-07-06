@@ -47,8 +47,8 @@ pub fn walrus_test() -> Result<String, rocket::response::status::Custom<String>>
 
     match walrus_init.store(
         "/home/goldman/mothrbox/dummy.mp4",
-        "/home/goldman/mothrbox/client_config.yaml",
-        "/home/goldman/.sui/sui_config/client.yaml"
+        // "/home/goldman/mothrbox/client_config.yaml",
+        // "/home/goldman/.sui/sui_config/client.yaml"
     ) {
         Ok(output) => Ok(output),
         Err(e) => Err(rocket::response::status::Custom(
@@ -75,7 +75,7 @@ struct EncryptForm<'r>{
     file: rocket::fs::TempFile<'r>
 }
 
-#[post("/encrypt/<user_id>/<alias>", data="<form>")]
+#[post("/encrypt/<user_id>/<alias>", data="<form>")]// 30 GB
 pub async fn encrypt(
     form: rocket::form::Form<EncryptForm<'_>>,
     // authenticate user

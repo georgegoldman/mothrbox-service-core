@@ -1,9 +1,10 @@
 
-use std::fmt::format;
+use std::{fmt::format, io::Write};
 
 use futures::stream;
 use mongodb::{bson::oid::{self, ObjectId}, Collection};
-use crate::encryption_core::openssl_ecc_key_gen::OpensslEccKeyGen;
+use rand::Rng;
+use crate::{encryption_core::openssl_ecc_key_gen::OpensslEccKeyGen, walrus_core};
 use rocket::{data::ToByteUnit, response, serde::json::Json, State};
 use tokio::io::AsyncReadExt;
 
@@ -117,20 +118,9 @@ impl EcryptionService {
         blob_id: &str
     ) -> Vec<u8> {
         // fetch the blob from walrus
-        let client = reqwest::Client::new();
-        let response = match client
-        .get(&format!("https://mothrbox-walrus-pypush.onrender.com/read_blob_as_file/{}", blob_id))
-        .send()
-        .await
-         {
-            Ok(resp) => resp,
-            Err(e) => {
-                eprintln!("Failed to fetch blob: {}", e);
-                return b"failed to fetch blob".to_vec();
-            }
-        };
+        let fetch_blob = walrus_core::WalrusCore{}.read(blob_id);
 
-        let encrypted_data = match response.bytes().await {
+        let encrypted_data = match fetch_blob {
             Ok(bytes) => bytes.to_vec(),
             Err(e) => {
                 eprintln!("Failed to read response bytes: {}", e);
@@ -182,36 +172,28 @@ impl EcryptionService {
     let cipher: Cbc<Aes128, Pkcs7> = Aes128Cbc::new_from_slices(&keypair.value, &iv).unwrap();
 
     let ciphertext = cipher.encrypt_vec(&buffer);
-    
-    // create multipart form with file and owner
+
+    let file_path = "/tmp/encrypted_data.bin";
+
+    // write ciphertext to file 
+    std::fs::write(file_path, &ciphertext).unwrap();
+
+    let client  = reqwest::Client::builder()
+    .build().unwrap();
+
+    let filename: String = randomizer::Randomizer::ALPHABETICAL(6).string().unwrap();
+
     let form = reqwest::multipart::Form::new()
-    .part("file", reqwest::multipart::Part::bytes(ciphertext)
-    .file_name("encrypted_data.bin")
-    .mime_str("application/octet-stream").unwrap())
-    .text("owner", owner.clone());
+    .part("file", reqwest::multipart::Part::bytes(std::fs::read(file_path).unwrap()).file_name(filename));
 
-    println!("{:?}", owner);
+    let request = client.request(reqwest::Method::POST, "http://13.60.49.107:8000/api/v1/walrus/store")
+    .multipart(form);
 
-    let client = reqwest::Client::new();
-    let response = match client
-    .post("https://mothrbox-walrus-pypush.onrender.com/write_to_walrus/")
-    // .header("Content-Type", "application/octect-stream")
-    // .body(ciphertext)
-    .multipart(form)
-    .send()
-    .await
-     {
-        Ok(resp) => resp,
-        Err(e) => {
-            eprintln!("Failed to send request: {}", e);
-            return None;
-        }
-    };
-
-    match response.json::<serde_json::Value>().await {
+    let response = request.send().await.unwrap();
+    match  response.json::<serde_json::Value>().await{
         Ok(json) => Some(json),
-        Err(e) => {
-            eprintln!("Invalid JSON response: {}", e);
+        Err(e) =>  {
+            eprintln!("Failed to parse JSON response: {}", e);
             None
         }
     }

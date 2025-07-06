@@ -3,6 +3,7 @@ extern crate rocket;
 use std::path::Path;
 // use encryption_core::new_encryption;
 use dotenv::dotenv;
+use rocket::data::ByteUnit;
 use std::env;
 // use route::post_video;
 use std::process::Command;
@@ -60,12 +61,15 @@ async fn rocket() -> _ {
      let file_limit: u64 = config.extract_inner("limits.file").unwrap_or(0);
      println!("🚀 Form limit: {} bytes", form_limit);
      println!("📁 File limit: {} bytes", file_limit);
+     let limits = rocket::data::Limits::new()
+          .limit("form", ByteUnit::Gibibyte(30)) // 30 GiB
+          .limit("file", ByteUnit::Gibibyte(30)); // ,, ,,
 
-     rocket::custom(rocket::Config {
-          address: "0.0.0.0".parse().unwrap(),
-          port,
-          ..rocket::Config::default()
-     })
+     let figment = rocket::Config::figment().merge(("limits", limits))
+     .merge(("address", "0.0.0.0"))
+     .merge(("port", 7000));
+
+     rocket::custom(figment)
      .register("/", catchers![too_large])
      .attach(cors)
      .manage(token_collection)
