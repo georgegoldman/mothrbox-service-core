@@ -1,14 +1,15 @@
 #[macro_use]
 extern crate rocket;
-use std::path::Path;
-// use encryption_core::new_encryption;
+
 use dotenv::dotenv;
-use rocket::data::ByteUnit;
+use rocket::{data::ByteUnit, figment::{
+    util::map,
+    value::{Map, Value},
+    Figment,
+}};
+use rocket_cors::{AllowedOrigins, CorsOptions};
 use std::env;
-// use route::post_video;
 use std::process::Command;
-
-
 
 mod encryption_core;
 mod paste_id;
@@ -21,70 +22,77 @@ mod sui_core;
 mod walrus_core;
 mod piston;
 
-use rocket_cors::{AllowedOrigins, CorsOptions};
-
 #[catch(413)]
 fn too_large(_req: &rocket::Request<'_>) -> &'static str {
-     "File too large Max size is 3GB"
+    "File too large. Max size is 30GB."
 }
-
 
 #[launch]
 async fn rocket() -> _ {
-         let uname = Command::new("uname").arg("-a").output().unwrap();
-    println!("OS Info: {}", String::from_utf8_lossy(&uname.stdout));
+    // Print system info (optional)
+    let uname = Command::new("uname").arg("-a").output().unwrap();
+    println!("🖥️ OS Info: {}", String::from_utf8_lossy(&uname.stdout));
 
     let arch = Command::new("arch").output().unwrap();
-    println!("Architecture: {}", String::from_utf8_lossy(&arch.stdout));
-     dotenv().ok();
+    println!("🧱 Architecture: {}", String::from_utf8_lossy(&arch.stdout));
 
-     // connect the different database collections
-     let token_collection = db::connect::<model_core::ApiToken>().await;
-     let key_pair = db::connect::<model_core::KeyPair>().await;
-     // let keypair_collection = db::connect::<new_encryption::KeyPairDocument>().await;
+    // Load environment variables
+    dotenv().ok();
 
-     // Create your EccKeyManager from the keypair_collection
-//     let key_manager = new_encryption::EccKeyManager::from_collection(keypair_collection);
-     
+    // Load DB collections
+    let token_collection = db::connect::<model_core::ApiToken>().await;
+    let key_pair = db::connect::<model_core::KeyPair>().await;
 
-     let port  = env::var("PORT")
-          .unwrap_or_else(|_| "7000".to_string())
-          .parse::<u16>()
-          .expect("Invalid PORT number");
-     let cors = CorsOptions::default()
-     .allowed_origins(AllowedOrigins::all())
-     .to_cors()
-     .unwrap();
+    // CORS config
+    let cors = CorsOptions::default()
+        .allowed_origins(AllowedOrigins::all())
+        .to_cors()
+        .unwrap();
 
-     let config = rocket::Config::figment();
-     let form_limit: u64 = config.extract_inner("limits.form").unwrap_or(0);
-     let file_limit: u64 = config.extract_inner("limits.file").unwrap_or(0);
-     println!("🚀 Form limit: {} bytes", form_limit);
-     println!("📁 File limit: {} bytes", file_limit);
-     let limits = rocket::data::Limits::new()
-          .limit("form", ByteUnit::Gibibyte(30)) // 30 GiB
-          .limit("file", ByteUnit::Gibibyte(30)); // ,, ,,
+    // Load port from .env or default to 7000
+    let port = env::var("PORT")
+        .unwrap_or_else(|_| "7000".to_string())
+        .parse::<u16>()
+        .expect("Invalid PORT number");
 
-     let figment = rocket::Config::figment().merge(("limits", limits))
-     .merge(("address", "0.0.0.0"))
-     .merge(("port", 7000));
+    // Merge Rocket config with 30GB form & file limit
+    let figment: Figment = rocket::Config::figment()
+        .merge((
+            "limits",
+            map! {
+                "form" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+                "data-form" => Value::from(ByteUnit::Gibibyte(30).as_u64()), // important for now
+                "file" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+                "file/$ext" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+                "string" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+                "bytes" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+                "json" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+                "msgpack" => Value::from(30 * 1024 * 1024 * 1024u64),  // 30 GB
+            },
+        ))
+        .merge(("address", "0.0.0.0"))
+        .merge(("port", port));
 
-     rocket::custom(figment)
-     .register("/", catchers![too_large])
-     .attach(cors)
-     .manage(token_collection)
-     .manage(key_pair)
-     // .manage(key_manager)
-     .mount("/engine/core", routes![
-          api_core::issue_token,
-          api_core::walrus_test,
-          // api_core::spawn_user,
-          api_core::create_key,
-          api_core::encrypt,
-          api_core::decrypt,
-          // api_core::key_exists,
-          // api_core::sign_message,
-          // api_core::verify_signature,  
-          ])
-     
+    // Sanity check: print limits
+    let config = rocket::Config::from(&figment);
+    println!("✅ Final form limit: {} bytes", config.limits.get("form").unwrap());
+    println!("✅ Final file limit: {} bytes", config.limits.get("file").unwrap());
+
+    // Launch Rocket
+    rocket::custom(figment)
+        .register("/", catchers![too_large])
+        .attach(cors)
+        
+        .manage(token_collection)
+        .manage(key_pair)
+        .mount(
+            "/engine/core",
+            routes![
+                api_core::issue_token,
+                api_core::walrus_test,
+                api_core::create_key,
+                api_core::encrypt,
+                api_core::decrypt,
+            ],
+        )
 }

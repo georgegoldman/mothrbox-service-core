@@ -35,6 +35,8 @@ use rand::{rngs::OsRng, RngCore};
 use std::{clone, io};
 use std::fmt;
 
+use rocket::data::{Limits};
+
 
 
 type Aes256Ctr = Ctr128BE<Aes256>;
@@ -81,12 +83,15 @@ pub async fn encrypt(
     // authenticate user
     user_id: &str,
     alias: &str,
-    db: &State<Collection<KeyPair>>
+    db: &State<Collection<KeyPair>>,
+    limits: &Limits
 )
  -> Option<serde_json::Value> 
 {
     let encrypt_service = piston::EcryptionService{};
     let owner = form.owner.clone(); // extract the address
+
+    let limit  = limits.get("file").unwrap_or(1.gigabytes());
 
     // convert TempFile to Data<'_> or Vec<u8>
     let file_data = match form.file.open().await {

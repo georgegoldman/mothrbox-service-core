@@ -173,27 +173,29 @@ impl EcryptionService {
 
     let ciphertext = cipher.encrypt_vec(&buffer);
 
-    let file_path = "/tmp/encrypted_data.bin";
+    // let filename: String = randomizer::Randomizer::ALPHABETICAL(6).string().unwrap();
+    // let path_name = format!("/tmp/{}", filename); // format path with random name
+    // let file_path = path_name.as_str();
 
-    // write ciphertext to file 
-    std::fs::write(file_path, &ciphertext).unwrap();
+    // write ciphertext to file
+    // let limit = 20 * 1024 *1024; // 20mb max
+    let mut temp_file = tempfile::NamedTempFile::new().unwrap();
+    temp_file.write_all(&ciphertext);
 
-    let client  = reqwest::Client::builder()
-    .build().unwrap();
+    let file_path = temp_file.path().to_str().unwrap().to_string();
 
-    let filename: String = randomizer::Randomizer::ALPHABETICAL(6).string().unwrap();
+    let walrus_output = walrus_core::WalrusCore{}.store(&file_path);
 
-    let form = reqwest::multipart::Form::new()
-    .part("file", reqwest::multipart::Part::bytes(std::fs::read(file_path).unwrap()).file_name(filename));
-
-    let request = client.request(reqwest::Method::POST, "http://13.60.49.107:8000/api/v1/walrus/store")
-    .multipart(form);
-
-    let response = request.send().await.unwrap();
-    match  response.json::<serde_json::Value>().await{
-        Ok(json) => Some(json),
-        Err(e) =>  {
-            eprintln!("Failed to parse JSON response: {}", e);
+    match walrus_output {
+        Ok(json_str) => match serde_json::from_str::<serde_json::Value>(&json_str) {
+            Ok(json) => Some(json),
+            Err(e) => {
+                eprintln!("Failed to parse JSON response: {}", e);
+                None
+            }
+        },
+        Err(e) => {
+            eprintln!("walrus command failed {}", e);
             None
         }
     }
