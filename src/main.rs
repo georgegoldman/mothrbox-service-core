@@ -2,25 +2,28 @@
 extern crate rocket;
 
 use dotenv::dotenv;
-use rocket::{data::ByteUnit, figment::{
-    util::map,
-    value::{Map, Value},
-    Figment,
-}};
+use rocket::{
+    data::ByteUnit,
+    figment::{
+        util::map,
+        value::{Map, Value},
+        Figment,
+    },
+};
 use rocket_cors::{AllowedOrigins, CorsOptions};
 use std::env;
 use std::process::Command;
 
-mod encryption_core;
-mod paste_id;
-mod model_core;
 mod api_core;
 mod db;
 mod dto;
+mod encryption_core;
 mod middleware;
+mod model_core;
+mod paste_id;
+mod piston;
 mod sui_core;
 mod walrus_core;
-mod piston;
 
 #[catch(413)]
 fn too_large(_req: &rocket::Request<'_>) -> &'static str {
@@ -75,14 +78,19 @@ async fn rocket() -> _ {
 
     // Sanity check: print limits
     let config = rocket::Config::from(&figment);
-    println!("✅ Final form limit: {} bytes", config.limits.get("form").unwrap());
-    println!("✅ Final file limit: {} bytes", config.limits.get("file").unwrap());
+    println!(
+        "✅ Final form limit: {} bytes",
+        config.limits.get("form").unwrap()
+    );
+    println!(
+        "✅ Final file limit: {} bytes",
+        config.limits.get("file").unwrap()
+    );
 
     // Launch Rocket
     rocket::custom(figment)
         .register("/", catchers![too_large])
         .attach(cors)
-        
         .manage(token_collection)
         .manage(key_pair)
         .mount(
@@ -93,6 +101,7 @@ async fn rocket() -> _ {
                 api_core::create_key,
                 api_core::encrypt,
                 api_core::decrypt,
+                api_core::sui_service,
             ],
         )
 }

@@ -4,19 +4,19 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-p256 = {version = "0.13.0", features = ["ecdh"]}
+p256 = { version = "0.13.0", features = ["ecdh"] }
 p384 = { version = "0.13", features = ["ecdsa", "pem"] }
-aes-gcm =  { version = "0.10", features = ["std"] }
+aes-gcm = { version = "0.10", features = ["std"] }
 rand = "0.8"
 rand_core = { version = "0.6", features = ["std"] }
 anyhow = "1.0"
-sha2 = "0.10.9" 
+sha2 = "0.10.9"
 hex = "0.4"
 rayon = "1.10.0"
 #serde = { version = "1.0.219", features = ["derive"] }
 futures = "0.3"
 dotenv = "0.15.0"
-chrono = {version = "0.4.41", features = ["serde"]}
+chrono = { version = "0.4.41", features = ["serde"] }
 hmac = "0.12.1"
 lazy_static = "1.5.0"
 bcrypt = "0.17.0"
@@ -41,21 +41,25 @@ rocket = { version = "0.5.1", features = ["json"] }
 
 
 ctr = "0.9"
-cipher = "0.4"  
+cipher = "0.4"
 rocket_cors = "0.6.0"
 
-#db 
+#db
 mongodb = { version = "2.7.1", features = ["tokio-runtime", "bson-chrono-0_4"] }
 rocket_db_pools = { version = "0.2.0", features = ["mongodb"] }
 
 # sui
 sui_sdk = { git = "https://github.com/mystenlabs/sui", tag = "mainnet-v1.47.1", package = "sui-sdk" }
 move-core-types = { git = "https://github.com/mystenlabs/sui", tag = "mainnet-v1.47.1", package = "move-core-types" }
+shared-crypto = { git = "https://github.com/mystenlabs/sui", tag = "mainnet-v1.47.1", package = "shared-crypto" }
+bcs = { git = "https://github.com/diem/bcs", tag = "v0.1.4", package = "bcs" }
+
 k256 = "0.13.4"
 
 aes = "0.7.0"
 block-modes = "0.8.1"
 openssl = "0.10.72"
-reqwest = {version = "0.12.19", features = ["json", "multipart"]}
+reqwest = { version = "0.12.19", features = ["json", "multipart"] }
 tokio = { version = "1", features = ["full"] }
 randomizer = "0.1.2"
+fastcrypto = "0.1.9"

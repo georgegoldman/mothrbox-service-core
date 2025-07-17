@@ -1,4 +1,3 @@
-
 use base64::engine::general_purpose;
 use base64::Engine;
 use chrono::Utc;
@@ -14,10 +13,6 @@ use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
 // use aes_gcm::aes;
-use rocket::{data::ToByteUnit, fs::TempFile, http::uri::Absolute, response::stream::ByteStream, tokio::fs::File, Data};
-use rocket::response::content::RawMsgPack;
-use tokio::io::AsyncReadExt;
-use tokio::stream;
 use crate::dto::key::KeyPairDTO;
 use crate::dto::GenerateKeypairRequest;
 use crate::middleware::api_token::AuthenticatedClient;
@@ -26,26 +21,31 @@ use crate::model_core::key::KeyPair;
 use crate::paste_id::PasteId;
 use crate::piston;
 use crate::piston::key::KeyService;
+use crate::sui_core::sui_impl::SuiService;
+use crate::sui_core::SuiCli;
 use crate::walrus_core::walrus_impl;
+use rocket::response::content::RawMsgPack;
+use rocket::{
+    data::ToByteUnit, fs::TempFile, http::uri::Absolute, response::stream::ByteStream,
+    tokio::fs::File, Data,
+};
+use tokio::io::AsyncReadExt;
+use tokio::stream;
 
 use aes::Aes256;
-use ctr::Ctr128BE;
 use cipher::{KeyIvInit, StreamCipher};
+use ctr::Ctr128BE;
 use rand::{rngs::OsRng, RngCore};
-use std::{clone, io};
 use std::fmt;
+use std::{clone, io};
 
-use rocket::data::{Limits};
-
-
+use rocket::data::Limits;
 
 type Aes256Ctr = Ctr128BE<Aes256>;
 
-
-
 #[get("/walrus_test")]
 pub fn walrus_test() -> Result<String, rocket::response::status::Custom<String>> {
-    let walrus_init = walrus_impl::WalrusCore{};
+    let walrus_init = walrus_impl::WalrusCore {};
 
     match walrus_init.store(
         "/home/goldman/mothrbox/dummy.mp4",
@@ -60,38 +60,35 @@ pub fn walrus_test() -> Result<String, rocket::response::status::Custom<String>>
     }
 }
 
-
-#[post("/keys", data="<key_pair>")]
+#[post("/keys", data = "<key_pair>")]
 pub async fn create_key(
     db: &State<Collection<KeyPair>>,
     key_pair: Json<GenerateKeypairRequest>,
 ) -> Result<Json<String>, rocket::response::status::Custom<String>> {
-    let key_service = KeyService{};
+    let key_service = KeyService {};
     let res = key_service.create_key(db, key_pair).await;
     res
 }
 
 #[derive(rocket::form::FromForm)]
-struct EncryptForm<'r>{
+struct EncryptForm<'r> {
     owner: String,
-    file: rocket::fs::TempFile<'r>
+    file: rocket::fs::TempFile<'r>,
 }
 
-#[post("/encrypt/<user_id>/<alias>", data="<form>")]// 30 GB
+#[post("/encrypt/<user_id>/<alias>", data = "<form>")] // 30 GB
 pub async fn encrypt(
     form: rocket::form::Form<EncryptForm<'_>>,
     // authenticate user
     user_id: &str,
     alias: &str,
     db: &State<Collection<KeyPair>>,
-    limits: &Limits
-)
- -> Option<serde_json::Value> 
-{
-    let encrypt_service = piston::EcryptionService{};
+    limits: &Limits,
+) -> Option<serde_json::Value> {
+    let encrypt_service = piston::EcryptionService {};
     let owner = form.owner.clone(); // extract the address
 
-    let limit  = limits.get("file").unwrap_or(1.gigabytes());
+    let limit = limits.get("file").unwrap_or(1.gigabytes());
 
     // convert TempFile to Data<'_> or Vec<u8>
     let file_data = match form.file.open().await {
@@ -99,12 +96,14 @@ pub async fn encrypt(
             let mut buffer = Vec::new();
             file.read_to_end(&mut buffer).await.ok()?;
             buffer
-        },
+        }
         Err(_) => return None,
     };
-    let encrypt_data = encrypt_service.encrypt(db, alias, user_id, owner.to_string(), file_data).await;
-    
-    return encrypt_data
+    let encrypt_data = encrypt_service
+        .encrypt(db, alias, user_id, owner.to_string(), file_data)
+        .await;
+
+    return encrypt_data;
 }
 
 #[get("/decrypt/<user_id>/<alias>/<blob_id>", /*data="<data>"*/)]
@@ -113,17 +112,21 @@ pub async fn decrypt(
     user_id: &str,
     alias: &str,
     blob_id: &str,
-    db: &State<Collection<KeyPair>>
-)
--> std::io::Result<RawMsgPack<Vec<u8>>>
-{
-    let encrypt_service = piston::EcryptionService{};
-    let decrypt_data = encrypt_service.fetch_and_decrypt(db, alias, user_id, blob_id).await;
+    db: &State<Collection<KeyPair>>,
+) -> std::io::Result<RawMsgPack<Vec<u8>>> {
+    let encrypt_service = piston::EcryptionService {};
+    let decrypt_data = encrypt_service
+        .fetch_and_decrypt(db, alias, user_id, blob_id)
+        .await;
 
-    return Ok(RawMsgPack(decrypt_data))
+    return Ok(RawMsgPack(decrypt_data));
 }
 
-
+#[get("/sui-service")]
+pub async fn sui_service() -> Result<serde_json::Value, rocket::response::Debug<anyhow::Error>> {
+    let result = SuiService::generate_key_nft().await?;
+    Ok(serde_json::to_value(result).unwrap())
+}
 
 // #[get("/keys")]
 // pub async fn list_keys(
@@ -137,7 +140,6 @@ pub async fn decrypt(
 //         Err(e) => Json(ApiResponse::error(e.to_string())),
 //     }
 // }
-
 
 // #[get("/keys/<key_id>/exists")]
 // pub async fn key_exists(
@@ -235,17 +237,13 @@ pub async fn decrypt(
 //     Json(ApiResponse::success("ECC Key Service is healthy".to_string()))
 // }
 
-
-
-
 #[post("/issue-token", data = "<wallet_address>")]
 pub async fn issue_token(
     db: &State<Collection<ApiToken>>,
-    wallet_address: Json<KeyPairDTO>
-) -> Result<String, Status>
-{
+    wallet_address: Json<KeyPairDTO>,
+) -> Result<String, Status> {
     let token = uuid::Uuid::new_v4().to_string();
-    let now  = chrono::Utc::now();
+    let now = chrono::Utc::now();
 
     let new_token = ApiToken {
         id: ObjectId::new(),
@@ -253,14 +251,12 @@ pub async fn issue_token(
         allowed: true,
         owner: wallet_address.address,
         created_at: Some(now.into()),
-        expires_at: None
+        expires_at: None,
     };
 
     db.insert_one(&new_token, None)
-    .await
-    .map_err(|_| Status::InternalServerError)?;
+        .await
+        .map_err(|_| Status::InternalServerError)?;
 
     Ok(token)
 }
-
-
