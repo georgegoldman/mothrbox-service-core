@@ -101,7 +101,8 @@ async fn rocket() -> _ {
                 api_core::create_key,
                 api_core::encrypt,
                 api_core::decrypt,
-                api_core::sui_service,
+                api_core::create_kiosk_controller,
+                api_core::mint_token_and_kiosk_controller,
             ],
         )
 }

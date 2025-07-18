@@ -21,7 +21,7 @@ use crate::model_core::key::KeyPair;
 use crate::paste_id::PasteId;
 use crate::piston;
 use crate::piston::key::KeyService;
-use crate::sui_core::sui_impl::SuiService;
+use crate::sui_core::sui_impl::{MtxType, SuiService};
 use crate::sui_core::SuiCli;
 use crate::walrus_core::walrus_impl;
 use rocket::response::content::RawMsgPack;
@@ -122,10 +122,35 @@ pub async fn decrypt(
     return Ok(RawMsgPack(decrypt_data));
 }
 
-#[get("/sui-service")]
-pub async fn sui_service() -> Result<serde_json::Value, rocket::response::Debug<anyhow::Error>> {
-    let result = SuiService::generate_key_nft().await?;
+#[get("/create-kiosk")]
+pub async fn create_kiosk_controller(
+) -> Result<serde_json::Value, rocket::response::Debug<anyhow::Error>> {
+    let result = SuiService::create_kiosk().await?;
     Ok(serde_json::to_value(result).unwrap())
+}
+
+#[derive(std::fmt::Debug, rocket::serde::Deserialize)]
+#[serde(crate = "rocket::serde")]
+pub struct MintKiosk {
+    pub name: String,
+    pub image_url: String,
+    pub description: String,
+    pub key_type: MtxType,
+}
+
+#[post("/mint-token-and-kiosk", data = "<request>")]
+pub async fn mint_token_and_kiosk_controller(
+    request: Json<MintKiosk>,
+) -> Result<serde_json::Value, rocket::response::Debug<anyhow::Error>> {
+    let result = SuiService::mint_token_and_kiosk(
+        &request.name,
+        &request.image_url,
+        &request.description,
+        request.key_type.clone(), // Clone the enum if needed
+    )
+    .await?;
+
+    Ok(result)
 }
 
 // #[get("/keys")]
