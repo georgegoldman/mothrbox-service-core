@@ -9,6 +9,7 @@ use mongodb::bson::oid::{self, ObjectId};
 use mongodb::{results, Collection};
 use mothrbox_service_core::encryption_core::blocks::CipherBlock;
 use openssl::derive;
+use p256::ecdsa::signature::Keypair;
 use rocket::http::Status;
 use rocket::serde::json::Json;
 use rocket::State;
@@ -132,9 +133,7 @@ pub async fn create_kiosk_controller(
 #[derive(std::fmt::Debug, rocket::serde::Deserialize)]
 #[serde(crate = "rocket::serde")]
 pub struct MintKiosk {
-    pub name: String,
-    pub image_url: String,
-    pub description: String,
+    pub alias: String,
     pub key_type: MtxType,
 }
 
@@ -143,10 +142,8 @@ pub async fn mint_token_and_kiosk_controller(
     request: Json<MintKiosk>,
 ) -> Result<serde_json::Value, rocket::response::Debug<anyhow::Error>> {
     let result = SuiService::mint_token_and_kiosk(
-        &request.name,
-        &request.image_url,
-        &request.description,
-        request.key_type.clone(), // Clone the enum if needed
+        &request.alias,
+        request.key_type.clone(), // Clone the enum if needed),
     )
     .await?;
 

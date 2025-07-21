@@ -3,8 +3,13 @@ use std::{process::Command, str::FromStr};
 use anyhow::Ok;
 use fastcrypto::hash::{Blake2b256, HashFunction, Sha3_256};
 use move_core_types::parsing::types;
-use rocket::form;
+use rocket::{form, time::error::Format};
 use sui_sdk::types::crypto::{Signer, SuiKeyPair, SuiSignature};
+
+use crate::{
+    dto::GenerateKeypairRequest, encryption_core::openssl_ecc_key_gen::OpensslEccKeyGen,
+    model_core, piston::key::KeyService,
+};
 
 pub struct SuiCli;
 
@@ -80,7 +85,7 @@ impl SuiService {
         let mut pt =
             sui_sdk::types::programmable_transaction_builder::ProgrammableTransactionBuilder::new();
         let package = sui_sdk::types::base_types::ObjectID::from_hex_literal(
-            "0x7e59da94aa73e4c9b5c1aef34555ac97de1951254d779894e0a5824ccb4110c2",
+            std::env::var("PACKAGE").unwrap().as_str(),
         )
         .map_err(|err| anyhow::anyhow!(err))
         .unwrap();
@@ -90,7 +95,7 @@ impl SuiService {
         let function = sui_sdk::types::Identifier::new("create_kiosk")
             .map_err(|err| anyhow::anyhow!(err))
             .unwrap();
-        pt.move_call(package, module, function, vec![], vec![]);
+        let _ = pt.move_call(package, module, function, vec![], vec![]);
         let builder = pt.finish();
         let gas_budget = 10_000_000;
         let gas_price = sui_client
@@ -166,8 +171,7 @@ impl SuiService {
     }
 
     pub async fn mint_token_and_kiosk(
-        value: &str,
-        description: &str,
+        name: &str,
         key_type: MtxType,
     ) -> Result<serde_json::Value, anyhow::Error> {
         dotenv::dotenv().ok();
@@ -200,10 +204,12 @@ impl SuiService {
             .unwrap();
 
         // constructing a programmable txn
+        
         let mut ptb =
             sui_sdk::types::programmable_transaction_builder::ProgrammableTransactionBuilder::new();
+            
         let package = sui_sdk::types::base_types::ObjectID::from_hex_literal(
-            "0x7e59da94aa73e4c9b5c1aef34555ac97de1951254d779894e0a5824ccb4110c2",
+            std::env::var("PACKAGE").unwrap().as_str(),
         )
         .map_err(|err| anyhow::anyhow!(err))
         .unwrap();
@@ -213,49 +219,75 @@ impl SuiService {
         let function = sui_sdk::types::Identifier::new("mint_token_and_kiosk")
             .map_err(|err| anyhow::anyhow!(err))
             .unwrap();
-        let mut type_arguments = vec![];
+        let mut type_arguments: Vec<sui_sdk::types::TypeTag> = Vec::new();
+        let mut image_url_string = String::new();
+        let mut image_url = "";
+        let mut description = "";
         match key_type {
             MtxType::MTXAccess => {
-                type_arguments[0] = sui_sdk::types::TypeTag::from_str("0x7e59da94aa73e4c9b5c1aef34555ac97de1951254d779894e0a5824ccb4110c2::key_validator::MTXAccess").unwrap()
+                let package_id = std::env::var("PACKAGE").unwrap().to_string();
+                let concat_type = format!("{package_id}::key_validator::MTXAccess");
+                type_arguments
+                    .push(sui_sdk::types::TypeTag::from_str(concat_type.as_str()).unwrap());
+                image_url_string = std::env::var("ACCESS_TOKEN_IMAGE_URL").unwrap();
+                image_url = &image_url_string;
+                description = "This is the access token NFT this nft will grant you use access to the SDKs and APIs"
             }
             MtxType::MTXKey => {
-                type_arguments[0] = sui_sdk::types::TypeTag::from_str("0x7e59da94aa73e4c9b5c1aef34555ac97de1951254d779894e0a5824ccb4110c2::key_validator::MTXKey").unwrap();
+                let package_id = std::env::var("PACKAGE").unwrap().to_string();
+                let concat_type = format!("{package_id}::key_validator::MTXKey");
+                type_arguments
+                    .push(sui_sdk::types::TypeTag::from_str(concat_type.as_str()).unwrap());
+                image_url_string = std::env::var("KEY_TOKEN_IMAGE_URL").unwrap();
+                image_url = &image_url_string;
+                description =
+                    "This is the key token NFT this embodies you key for signing data on Mothrbox"
             }
         };
-
+        // get the kiosk in the correct format
+        let kiosk_object_id = sui_sdk::types::base_types::ObjectID::from_hex_literal(
+            "0xe7e4e202972d1f7403a027d3debb4c4e9cad8b86e75b7d7e6b3da19e16dba165",
+        )
+        .unwrap();
+        let kiosk_object = sui_client.read_api().get_object_with_options(kiosk_object_id, sui_sdk::rpc_types::SuiObjectDataOptions::new().with_content().with_owner()).await?.data.ok_or(anyhow::anyhow!("object not found")).unwrap();
+        let initial_shared_version = match &kiosk_object.owner {
+    Some(sui_sdk::types::object::Owner::Shared{ initial_shared_version } )=> *initial_shared_version,
+    _ => anyhow::bail!("Kiosk is not a shared object"),
+};
+        let kiosk_object_ref = kiosk_object.object_ref();
         let kiosk_arg = ptb
             .input(sui_sdk::types::transaction::CallArg::Object(
-                /* convert the id to object arg */
-                sui_sdk::types::transaction::ObjectArg::ImmOrOwnedObject((
-                    sui_sdk::types::base_types::ObjectID::from_hex_literal(
-                        "0x35879a101f643ef93e77e135fc7c63598a4527399680ba35e8c8146f89b347c9",
-                    )
-                    .unwrap(),
-                    sui_sdk::types::base_types::SequenceNumber::from_u64(497848450_u64),
-                    sui_sdk::types::base_types::ObjectDigest::from_str(
-                        "7oNYTS92e3MujUxZCDMsP1cLFeWmf8ctoWz46fDkBUs4",
-                    )
-                    .unwrap(),
-                )),
+                sui_sdk::types::transaction::ObjectArg::SharedObject
+                    {
+                        id: kiosk_object_ref.0, // kiosk id,
+                        initial_shared_version, // kiosk sequence number
+                        mutable: true //kiosk_object_ref.2, // kiosk digest
+                }
+                
             ))
             .unwrap();
+        let cap_object_id = sui_sdk::types::base_types::ObjectID::from_hex_literal(
+            "0xc35fa1eff8de610854fc05a861cca958b832e5f320b9ee636923940aaef2892f"
+        ).unwrap();
+        let cap_object = sui_client.read_api().get_object_with_options(cap_object_id, sui_sdk::rpc_types::SuiObjectDataOptions::new().with_content().with_owner()).await?
+        .data.ok_or(anyhow::anyhow!("Object not found"))?;
+            let cap_object_ref = cap_object.object_ref();
         let cap_arg = ptb
             .input(sui_sdk::types::transaction::CallArg::Object(
-                /* convert the id to object arg */
                 sui_sdk::types::transaction::ObjectArg::ImmOrOwnedObject((
-                    sui_sdk::types::base_types::ObjectID::from_hex_literal(
-                        "0x40a81c25e1c5f7d7d795ebc950678beb48c8bef170bbc85ce66671f97e7cfc7c",
-                    )
-                    .unwrap(),
-                    sui_sdk::types::base_types::SequenceNumber::from_u64(497848450_u64),
-                    sui_sdk::types::base_types::ObjectDigest::from_str(
-                        "DiHUx3Dgwmpv1jSVNJVJteXzhsDDEZD6b95r4TBpMCij",
-                    )
-                    .unwrap(),
-                )),
+                    cap_object_ref.0, // cap id
+                    cap_object_ref.1, // cap sequence number
+                    cap_object_ref.2 // cap object digest
+                ))
+                ,
             ))
             .unwrap();
+        let key_engine = OpensslEccKeyGen {};
+        let description = String::from_utf8_lossy(&key_engine.get_key().to_vec()).to_string();
+
         let arguments = vec![
+            
+            
             ptb.input(sui_sdk::types::transaction::CallArg::Pure(
                 bcs::to_bytes(&name).unwrap(),
             ))
